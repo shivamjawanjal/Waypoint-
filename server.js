@@ -3,7 +3,10 @@ const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
+const jwt = require('jsonwebtoken');
 const Project = require('./models/Project');
+const User = require('./models/User');
+const { authenticate, requireRole, JWT_SECRET } = require('./middleware/auth');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -18,10 +21,104 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ---- API routes ----
+// ---- Auth routes ----
 
-// List all projects (summary-safe: includes everything, fine at personal scale)
-app.get('/api/projects', async (req, res) => {
+// Check if first-run setup is needed
+app.get('/api/auth/status', async (req, res) => {
+  try {
+    const count = await User.countDocuments();
+    res.json({ needsSetup: count === 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// First-run admin creation
+app.post('/api/auth/setup', async (req, res) => {
+  try {
+    const count = await User.countDocuments();
+    if (count > 0) return res.status(400).json({ error: 'Admin already exists' });
+
+    const { userId, name, password } = req.body;
+    if (!userId || !name || !password) return res.status(400).json({ error: 'userId, name, and password are required' });
+    if (password.length < 4) return res.status(400).json({ error: 'Password must be at least 4 characters' });
+
+    const user = await User.create({ userId: userId.trim(), name: name.trim(), role: 'admin', password });
+    const token = jwt.sign({ userId: user.userId, name: user.name, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    res.status(201).json({ token, user: { userId: user.userId, name: user.name, role: user.role } });
+  } catch (err) {
+    if (err.code === 11000) return res.status(400).json({ error: 'User ID already taken' });
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Login
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { userId, password } = req.body;
+    if (!userId || !password) return res.status(400).json({ error: 'userId and password are required' });
+
+    const user = await User.findOne({ userId: userId.trim() });
+    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const match = await user.comparePassword(password);
+    if (!match) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const token = jwt.sign({ userId: user.userId, name: user.name, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: { userId: user.userId, name: user.name, role: user.role } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- User management (admin only) ----
+
+app.get('/api/users', authenticate, requireRole('admin'), async (req, res) => {
+  try {
+    const users = await User.find().select('-password').sort({ createdAt: -1 });
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/users', authenticate, requireRole('admin'), async (req, res) => {
+  try {
+    const { userId, name, role, password } = req.body;
+    if (!userId || !name || !password) return res.status(400).json({ error: 'userId, name, and password are required' });
+    if (password.length < 4) return res.status(400).json({ error: 'Password must be at least 4 characters' });
+
+    const user = await User.create({
+      userId: userId.trim(),
+      name: name.trim(),
+      role: role === 'admin' ? 'admin' : 'user',
+      password
+    });
+    res.status(201).json({ userId: user.userId, name: user.name, role: user.role });
+  } catch (err) {
+    if (err.code === 11000) return res.status(400).json({ error: 'User ID already taken' });
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/users/:userId', authenticate, requireRole('admin'), async (req, res) => {
+  try {
+    const target = await User.findOne({ userId: req.params.userId });
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    if (target.role === 'admin') {
+      const adminCount = await User.countDocuments({ role: 'admin' });
+      if (adminCount <= 1) return res.status(400).json({ error: 'Cannot delete the last admin' });
+    }
+    await User.deleteOne({ userId: req.params.userId });
+    res.json({ deleted: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Project routes (auth-protected) ----
+
+app.get('/api/projects', authenticate, async (req, res) => {
   try {
     const projects = await Project.find().sort({ createdAt: -1 });
     res.json(projects);
@@ -30,8 +127,7 @@ app.get('/api/projects', async (req, res) => {
   }
 });
 
-// Get one project
-app.get('/api/projects/:id', async (req, res) => {
+app.get('/api/projects/:id', authenticate, async (req, res) => {
   try {
     const project = await Project.findById(req.params.id);
     if (!project) return res.status(404).json({ error: 'Not found' });
@@ -41,8 +137,7 @@ app.get('/api/projects/:id', async (req, res) => {
   }
 });
 
-// Create a project (after Gemini/Groq generates the node structure)
-app.post('/api/projects', async (req, res) => {
+app.post('/api/projects', authenticate, requireRole('admin'), async (req, res) => {
   try {
     const project = await Project.create(req.body);
     res.status(201).json(project);
@@ -51,8 +146,7 @@ app.post('/api/projects', async (req, res) => {
   }
 });
 
-// Replace a project's full state (status changes, checklist edits, new nodes, etc.)
-app.put('/api/projects/:id', async (req, res) => {
+app.put('/api/projects/:id', authenticate, requireRole('admin'), async (req, res) => {
   try {
     const updated = await Project.findByIdAndUpdate(
       req.params.id,
@@ -66,8 +160,7 @@ app.put('/api/projects/:id', async (req, res) => {
   }
 });
 
-// Delete a project
-app.delete('/api/projects/:id', async (req, res) => {
+app.delete('/api/projects/:id', authenticate, requireRole('admin'), async (req, res) => {
   try {
     await Project.findByIdAndDelete(req.params.id);
     res.json({ deleted: true });

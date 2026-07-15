@@ -14,7 +14,9 @@ const NodeSchema = new mongoose.Schema({
   status: { type: String, enum: ['pending', 'progress', 'done'], default: 'pending' },
   checklist: { type: [ChecklistItemSchema], default: [] },
   notes: { type: String, default: '' },
-  collapsed: { type: Boolean, default: false }
+  collapsed: { type: Boolean, default: false },
+  assignedTo: { type: String, default: null },
+  completedBy: { type: String, default: null }
 }, { _id: false });
 
 const ProjectSchema = new mongoose.Schema({
