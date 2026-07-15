@@ -23,11 +23,14 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ---- Auth routes ----
 
-// Check if first-run setup is needed
+// Check if first-run setup is needed or signup is enabled
 app.get('/api/auth/status', async (req, res) => {
   try {
     const count = await User.countDocuments();
-    res.json({ needsSetup: count === 0 });
+    res.json({
+      needsSetup: count === 0,
+      inviteCodeEnabled: !!process.env.INVITE_CODE
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -44,6 +47,36 @@ app.post('/api/auth/setup', async (req, res) => {
     if (password.length < 4) return res.status(400).json({ error: 'Password must be at least 4 characters' });
 
     const user = await User.create({ userId: userId.trim(), name: name.trim(), role: 'admin', password });
+    const token = jwt.sign({ userId: user.userId, name: user.name, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    res.status(201).json({ token, user: { userId: user.userId, name: user.name, role: user.role } });
+  } catch (err) {
+    if (err.code === 11000) return res.status(400).json({ error: 'User ID already taken' });
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Self-signup with invite code
+app.post('/api/auth/signup', async (req, res) => {
+  try {
+    const inviteCodeConfig = process.env.INVITE_CODE;
+    if (!inviteCodeConfig) {
+      return res.status(403).json({ error: 'Self-registration is disabled (no invite code configured).' });
+    }
+
+    const { userId, name, password, inviteCode } = req.body;
+    if (!userId || !name || !password || !inviteCode) {
+      return res.status(400).json({ error: 'All fields (userId, name, password, and inviteCode) are required' });
+    }
+
+    if (inviteCode.trim() !== inviteCodeConfig.trim()) {
+      return res.status(400).json({ error: 'Invalid invite code' });
+    }
+
+    if (password.length < 4) {
+      return res.status(400).json({ error: 'Password must be at least 4 characters' });
+    }
+
+    const user = await User.create({ userId: userId.trim(), name: name.trim(), role: 'user', password });
     const token = jwt.sign({ userId: user.userId, name: user.name, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
     res.status(201).json({ token, user: { userId: user.userId, name: user.name, role: user.role } });
   } catch (err) {
@@ -70,6 +103,7 @@ app.post('/api/auth/login', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 // ---- User management (admin only) ----
 
