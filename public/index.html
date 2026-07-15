@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Waypoint — Blueprint your build</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-deep:#0A1622;
+    --bg-panel:#0F2036;
+    --bg-panel-2:#122845;
+    --grid-line: rgba(94,200,216,0.07);
+    --trace:#5EC8D8;
+    --trace-dim: rgba(94,200,216,0.35);
+    --text-primary:#E7F1F5;
+    --text-dim:#6E8A9C;
+    --text-faint:#405066;
+    --pending:#45607A;
+    --progress:#E8A33D;
+    --done:#4FD69C;
+    --danger:#E8615A;
+    --border:#1D3A56;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{
+    background:var(--bg-deep);
+    color:var(--text-primary);
+    font-family:'Inter',sans-serif;
+    overflow:hidden;
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size:28px 28px;
+  }
+  .mono{font-family:'JetBrains Mono',monospace;}
+  #app{display:flex; height:100vh;}
+
+  /* ---------- Sidebar ---------- */
+  #sidebar{
+    width:250px; flex-shrink:0;
+    background:rgba(15,32,54,0.85);
+    border-right:1px solid var(--border);
+    display:flex; flex-direction:column;
+    backdrop-filter: blur(6px);
+  }
+  .brand{
+    padding:18px 16px 14px; border-bottom:1px solid var(--border);
+  }
+  .brand-title{font-family:'JetBrains Mono',monospace; font-weight:700; font-size:16px; letter-spacing:0.5px; color:var(--text-primary);}
+  .brand-title span{color:var(--trace);}
+  .brand-sub{font-size:11px; color:var(--text-dim); margin-top:3px;}
+  #newPlanBtn{
+    margin:12px 14px; padding:9px 12px;
+    background:transparent; border:1px dashed var(--trace-dim);
+    color:var(--trace); font-family:'JetBrains Mono',monospace; font-size:12px;
+    border-radius:3px; cursor:pointer; text-align:left;
+  }
+  #newPlanBtn:hover{background:rgba(94,200,216,0.08); border-style:solid;}
+  #projectList{flex:1; overflow-y:auto; padding:0 8px;}
+  .project-item{
+    padding:10px 10px; margin:2px 4px; border-radius:3px; cursor:pointer;
+    border:1px solid transparent; position:relative;
+  }
+  .project-item:hover{background:var(--bg-panel-2);}
+  .project-item.active{background:var(--bg-panel-2); border-color:var(--border);}
+  .project-item .p-name{font-size:13px; color:var(--text-primary); font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .project-item .p-meta{font-size:10px; color:var(--text-dim); margin-top:3px; font-family:'JetBrains Mono',monospace;}
+  .p-bar{height:3px; background:var(--border); border-radius:2px; margin-top:6px; overflow:hidden;}
+  .p-bar-fill{height:100%; background:var(--done);}
+  .p-del{position:absolute; top:8px; right:6px; color:var(--text-faint); background:none; border:none; cursor:pointer; font-size:13px; display:none;}
+  .project-item:hover .p-del{display:block;}
+  .p-del:hover{color:var(--danger);}
+  .sidebar-foot{padding:10px 14px; border-top:1px solid var(--border); font-size:10px; color:var(--text-faint); font-family:'JetBrains Mono',monospace;}
+
+  /* ---------- Main ---------- */
+  #main{flex:1; position:relative; overflow:hidden;}
+  .empty-state{
+    height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    color:var(--text-dim); gap:8px; text-align:center; padding:40px;
+  }
+  .empty-state h2{font-family:'JetBrains Mono',monospace; color:var(--text-primary); font-weight:600; font-size:18px; margin:0;}
+  .empty-state p{font-size:13px; max-width:360px; line-height:1.5; margin:0;}
+
+  /* ---------- New plan form ---------- */
+  #newPlanView{
+    height:100%; overflow-y:auto; padding:40px; display:flex; justify-content:center;
+  }
+  .form-card{width:100%; max-width:720px;}
+  .form-card h2{font-family:'JetBrains Mono',monospace; font-size:20px; margin:0 0 4px;}
+  .form-card .hint{color:var(--text-dim); font-size:13px; margin-bottom:22px; line-height:1.5;}
+  label.field-label{display:block; font-size:11px; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-dim); margin-bottom:6px; font-family:'JetBrains Mono',monospace;}
+  textarea, input[type=text], input[type=password]{
+    width:100%; background:var(--bg-panel); border:1px solid var(--border); color:var(--text-primary);
+    border-radius:4px; padding:10px 12px; font-family:'JetBrains Mono',monospace; font-size:12.5px;
+    outline:none;
+  }
+  textarea:focus, input:focus{border-color:var(--trace);}
+  textarea{min-height:260px; resize:vertical; line-height:1.5;}
+  .field{margin-bottom:18px;}
+  .row2{display:flex; gap:14px; align-items:flex-end;}
+  .row2 .field{flex:1; margin-bottom:0;}
+  #generateBtn{
+    background:var(--trace); color:#06222b; border:none; padding:11px 20px; border-radius:4px;
+    font-family:'JetBrains Mono',monospace; font-weight:700; font-size:12.5px; cursor:pointer; margin-top:18px;
+    letter-spacing:0.4px;
+  }
+  #generateBtn:disabled{opacity:0.5; cursor:progress;}
+  #generateBtn:hover:not(:disabled){background:#7fd8e6;}
+  .err-box{background:rgba(232,97,90,0.1); border:1px solid var(--danger); color:#ffb4ae; padding:10px 12px; border-radius:4px; font-size:12px; margin-top:14px; font-family:'JetBrains Mono',monospace; white-space:pre-wrap;}
+  .remember-row{display:flex; align-items:center; gap:6px; margin-top:8px; font-size:11px; color:var(--text-dim);}
+
+  /* ---------- Canvas ---------- */
+  #canvasView{height:100%; display:flex; flex-direction:column;}
+  #topbar{
+    display:flex; align-items:center; gap:16px; padding:10px 18px;
+    border-bottom:1px solid var(--border); background:rgba(15,32,54,0.7); backdrop-filter:blur(6px); z-index:5;
+  }
+  #topbar .plan-title{font-family:'JetBrains Mono',monospace; font-weight:600; font-size:14px;}
+  #progressWrap{display:flex; align-items:center; gap:8px; flex:1; max-width:280px;}
+  #progressTrack{flex:1; height:6px; background:var(--border); border-radius:3px; overflow:hidden;}
+  #progressFill{height:100%; background:linear-gradient(90deg, var(--progress), var(--done));}
+  #progressLabel{font-size:11px; color:var(--text-dim); font-family:'JetBrains Mono',monospace; white-space:nowrap;}
+  .top-btn{
+    background:transparent; border:1px solid var(--border); color:var(--text-dim); padding:6px 11px;
+    border-radius:3px; font-size:11px; cursor:pointer; font-family:'JetBrains Mono',monospace;
+  }
+  .top-btn:hover{border-color:var(--trace); color:var(--trace);}
+  #canvasScroll{flex:1; position:relative; overflow:hidden; cursor:grab;}
+  #canvasScroll.grabbing{cursor:grabbing;}
+  #canvasInner{position:absolute; top:0; left:0; transform-origin:0 0;}
+  svg#edgeLayer{position:absolute; top:0; left:0; overflow:visible; pointer-events:none;}
+  .node{
+    position:absolute; width:210px; min-height:52px; background:var(--bg-panel);
+    border:1.5px solid var(--pending); color:var(--text-primary); cursor:pointer;
+    padding:8px 10px 7px; font-family:'JetBrains Mono',monospace;
+    clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+    transition:border-color .15s, box-shadow .15s;
+  }
+  .node:hover{box-shadow:0 0 0 1px var(--trace);}
+  .node.selected{border-color:var(--trace); box-shadow:0 0 12px rgba(94,200,216,0.35);}
+  .node.status-progress{border-color:var(--progress);}
+  .node.status-done{border-color:var(--done); opacity:0.75;}
+  .node.status-done .n-label{text-decoration:line-through; text-decoration-color:var(--done);}
+  .n-type{font-size:9px; letter-spacing:0.6px; color:var(--text-faint); text-transform:uppercase;}
+  .n-label{font-size:12.5px; margin-top:2px; line-height:1.35; word-break:break-word;}
+  .n-foot{display:flex; justify-content:space-between; align-items:center; margin-top:6px;}
+  .n-chk{font-size:10px; color:var(--text-dim);}
+  .n-toggle{
+    position:absolute; right:-9px; top:50%; transform:translateY(-50%);
+    width:18px; height:18px; border-radius:50%; background:var(--bg-panel-2); border:1px solid var(--border);
+    color:var(--text-dim); font-size:11px; display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .n-toggle:hover{border-color:var(--trace); color:var(--trace);}
+  .n-dot{position:absolute; width:6px; height:6px; border-radius:50%; background:var(--trace-dim);}
+
+  /* ---------- Detail panel ---------- */
+  #detailPanel{
+    width:0; overflow:hidden; border-left:1px solid var(--border); background:rgba(15,32,54,0.92);
+    backdrop-filter:blur(8px); transition:width .18s ease; flex-shrink:0;
+  }
+  #detailPanel.open{width:330px;}
+  #detailInner{width:330px; height:100%; overflow-y:auto; padding:18px;}
+  .d-breadcrumb{font-size:10px; color:var(--text-faint); font-family:'JetBrains Mono',monospace; margin-bottom:10px; word-break:break-word;}
+  .d-label-input{
+    width:100%; background:transparent; border:none; border-bottom:1px solid var(--border); color:var(--text-primary);
+    font-size:15px; font-family:'JetBrains Mono',monospace; font-weight:600; padding:4px 0 8px; outline:none;
+  }
+  .d-label-input:focus{border-color:var(--trace);}
+  .d-type-badge{display:inline-block; font-size:9px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-dim); margin:8px 0 14px; font-family:'JetBrains Mono',monospace;}
+  .status-row{display:flex; gap:6px; margin-bottom:18px;}
+  .status-btn{flex:1; padding:7px 4px; font-size:10.5px; text-align:center; border-radius:3px; cursor:pointer; border:1px solid var(--border); color:var(--text-dim); font-family:'JetBrains Mono',monospace;}
+  .status-btn.active.pending{border-color:var(--pending); color:var(--pending); background:rgba(69,96,122,0.15);}
+  .status-btn.active.progress{border-color:var(--progress); color:var(--progress); background:rgba(232,163,61,0.12);}
+  .status-btn.active.done{border-color:var(--done); color:var(--done); background:rgba(79,214,156,0.12);}
+  .d-section-title{font-size:10.5px; text-transform:uppercase; letter-spacing:0.6px; color:var(--text-dim); margin:16px 0 8px; font-family:'JetBrains Mono',monospace;}
+  .chk-item{display:flex; align-items:flex-start; gap:7px; padding:5px 0; font-size:12.5px; border-bottom:1px solid rgba(29,58,86,0.5);}
+  .chk-item input[type=checkbox]{margin-top:2px; accent-color:var(--done);}
+  .chk-item span{flex:1; line-height:1.4;}
+  .chk-item.checked span{text-decoration:line-through; color:var(--text-dim);}
+  .chk-del{background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:12px;}
+  .chk-del:hover{color:var(--danger);}
+  .add-row{display:flex; gap:6px; margin-top:8px;}
+  .add-row input{flex:1; padding:6px 8px; font-size:12px;}
+  .add-row button{background:var(--bg-panel-2); border:1px solid var(--border); color:var(--trace); border-radius:3px; padding:0 10px; cursor:pointer; font-family:'JetBrains Mono',monospace;}
+  textarea.notes{min-height:80px; font-size:12px;}
+  .danger-btn{width:100%; margin-top:22px; background:transparent; border:1px solid var(--danger); color:var(--danger); padding:8px; border-radius:3px; cursor:pointer; font-family:'JetBrains Mono',monospace; font-size:11px;}
+  .danger-btn:hover{background:rgba(232,97,90,0.1);}
+  .child-btn{width:100%; margin-top:6px; background:transparent; border:1px dashed var(--trace-dim); color:var(--trace); padding:8px; border-radius:3px; cursor:pointer; font-family:'JetBrains Mono',monospace; font-size:11px;}
+  .child-btn:hover{background:rgba(94,200,216,0.08);}
+  #closeDetail{position:absolute; top:14px; right:14px; background:none; border:none; color:var(--text-dim); font-size:18px; cursor:pointer;}
+  ::-webkit-scrollbar{width:8px; height:8px;}
+  ::-webkit-scrollbar-thumb{background:var(--border); border-radius:4px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  .spinner{display:inline-block; width:12px; height:12px; border:2px solid rgba(6,34,43,0.3); border-top-color:#06222b; border-radius:50%; animation:spin .6s linear infinite; margin-right:6px; vertical-align:middle;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="sidebar">
+    <div class="brand">
+      <div class="brand-title">Way<span>point</span></div>
+      <div class="brand-sub">blueprint your build, one milestone at a time</div>
+    </div>
+    <button id="newPlanBtn">+ New plan</button>
+    <div id="projectList"></div>
+    <div class="sidebar-foot">synced to MongoDB Atlas</div>
+  </div>
+
+  <div id="main">
+    <div id="emptyState" class="empty-state" style="display:none;">
+      <h2>No plan open</h2>
+      <p>Paste an AI-generated implementation plan (milestones, phases, files) and PlanMap will turn it into a trackable mind map — with the small quality-gate steps kept in, so nothing gets forgotten milestone to milestone.</p>
+    </div>
+
+    <div id="newPlanView" style="display:none;">
+      <div class="form-card">
+        <h2>New plan</h2>
+        <div class="hint">Paste the raw plan text (e.g. from ChatGPT, Claude, Gemini, Grok — the milestone/phase breakdown, file lists, CTO notes, all of it). Gemini will structure it into phases → milestones → files → tasks, and infer the small checklist steps (lint, tests, review, merge, edge cases) that are easy to forget.</div>
+
+        <div class="field">
+          <label class="field-label">Plan name</label>
+          <input type="text" id="planName" placeholder="e.g. Timeline Generator — TASK-013">
+        </div>
+
+        <div class="field">
+          <label class="field-label">Plan text</label>
+          <textarea id="planText" placeholder="Paste the full AI-generated plan here..."></textarea>
+        </div>
+
+        <div class="row2">
+          <div class="field" style="max-width:180px;">
+            <label class="field-label">AI provider</label>
+            <select id="provider" style="width:100%; background:var(--bg-panel); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; padding:10px 12px; font-family:'JetBrains Mono',monospace; font-size:12.5px;">
+              <option value="gemini">Gemini (free tier)</option>
+              <option value="groq">Groq (fast, free tier)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label" id="apiKeyLabel">Gemini API key</label>
+            <input type="password" id="apiKey" placeholder="AIza...">
+          </div>
+        </div>
+        <div class="remember-row">
+          <input type="checkbox" id="rememberKey" checked>
+          <label for="rememberKey">Remember key in this browser</label>
+        </div>
+        <div style="font-size:11px; color:var(--text-faint); margin-top:6px;" id="providerHint">Free key: aistudio.google.com/apikey</div>
+
+        <button id="generateBtn">Generate mind map</button>
+        <button class="top-btn" id="cancelNewPlan" style="margin-left:8px; margin-top:18px;">Cancel</button>
+        <div id="errBox" style="display:none;" class="err-box"></div>
+      </div>
+    </div>
+
+    <div id="canvasView" style="display:none;">
+      <div id="topbar">
+        <div class="plan-title" id="planTitleLabel"></div>
+        <div id="progressWrap">
+          <div id="progressTrack"><div id="progressFill" style="width:0%"></div></div>
+          <div id="progressLabel">0%</div>
+        </div>
+        <div id="saveStatus" style="font-size:10.5px; color:var(--text-faint); font-family:'JetBrains Mono',monospace; min-width:70px;"></div>
+        <button class="top-btn" id="addRootBtn">+ Node</button>
+        <button class="top-btn" id="exportBtn">Export JSON</button>
+        <button class="top-btn" id="resetViewBtn">Reset view</button>
+      </div>
+      <div id="canvasScroll">
+        <div id="canvasInner">
+          <svg id="edgeLayer"></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="detailPanel">
+    <div id="detailInner"></div>
+  </div>
+
+</div>
+
+<script>
+/* ============================= STATE =============================
+   Plan data (projects + nodes) lives in MongoDB Atlas, reached through
+   this app's own /api/projects endpoints (same origin — no CORS).
+   Only small local preferences (API keys, last-open plan) stay in
+   the browser's localStorage, since those are per-browser secrets,
+   not shared project data.
+*/
+const PREFS_KEY = 'waypoint_prefs_v1';
+let prefs = loadPrefs();
+let projects = []; // in-memory cache of everything fetched from Mongo
+let currentView = 'empty'; // empty | newplan | canvas
+let selectedNodeId = null;
+let pan = {x: 40, y: 40};
+let zoom = 1;
+let saveTimer = null;
+
+function loadPrefs(){
+  try{
+    const raw = localStorage.getItem(PREFS_KEY);
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  return { apiKeys:{ gemini:'', groq:'' }, lastProvider:'gemini', activeId:null };
+}
+function savePrefs(){ localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); }
+
+function uid(prefix){ return prefix + '_' + Math.random().toString(36).slice(2,9); }
+
+/* ---------- API helpers ---------- */
+async function apiList(){
+  const r = await fetch('/api/projects');
+  if(!r.ok) throw new Error('Could not reach Waypoint server (' + r.status + ')');
+  return r.json();
+}
+async function apiCreate(project){
+  const r = await fetch('/api/projects', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(project) });
+  if(!r.ok) throw new Error('Could not save the new plan to MongoDB (' + r.status + ')');
+  return r.json();
+}
+async function apiUpdate(id, project){
+  const body = { name: project.name, title: project.title, provider: project.provider, rawText: project.rawText, nodes: project.nodes };
+  const r = await fetch('/api/projects/' + id, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if(!r.ok) throw new Error('Save failed (' + r.status + ')');
+  return r.json();
+}
+async function apiDelete(id){
+  const r = await fetch('/api/projects/' + id, { method:'DELETE' });
+  if(!r.ok) throw new Error('Delete failed (' + r.status + ')');
+  return r.json();
+}
+
+/* Debounced autosave: called after every node/checklist/status edit */
+function queueSave(project){
+  const el = document.getElementById('saveStatus');
+  if(el) el.textContent = 'Saving…';
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    try{
+      await apiUpdate(project._id, project);
+      if(el) el.textContent = 'Saved to Atlas';
+    }catch(e){
+      if(el) el.textContent = 'Save failed';
+      console.error(e);
+    }
+  }, 500);
+}
+
+/* ============================= GEMINI ============================= */
+const SYSTEM_PROMPT = `You are a project-planning assistant. The user will paste a software implementation plan generated by an AI (often phases, milestones, file lists, and a described workflow like "run linter, run tests, review, merge").
+
+Convert it into JSON with EXACTLY this shape:
+{
+  "title": "short plan title",
+  "nodes": [
+    {
+      "id": "short-unique-slug",
+      "parentId": "id-of-parent-or-null-for-top-level",
+      "type": "phase" | "milestone" | "file" | "task",
+      "label": "short display label (file name, milestone name, or task name)",
+      "doneHint": true or false,
+      "checklist": ["concrete small sub-step", "..."]
+    }
+  ]
+}
+
+Rules:
+- Preserve the hierarchy implied by the source (Phase contains Milestones; a Milestone contains Files/Tasks). Root nodes (phases) have parentId: null.
+- doneHint is true ONLY if the source text explicitly marks that item as already complete (checkmark, "done", "completed").
+- If the plan describes a recurring quality-gate workflow anywhere (lint, type-check, tests, code review, merge, etc.), attach a version of that same checklist to every milestone/file/task node that represents implementation work, worded specifically to that node — IN ADDITION to any concrete implementation sub-steps you can infer are needed for that specific file/task (e.g. "handle empty/null input", "write docstrings", "add unit tests for edge case X").
+- Checklist items must be small, concrete, and specific — the kind of detail that gets silently skipped when a developer is moving fast between milestones. Avoid vague items like "implement functionality".
+- Every node except top-level phases must have a valid parentId matching another node's id.
+- Output ONLY the raw JSON object. No markdown code fences, no commentary, no trailing text.`;
+
+async function callGemini(planText, apiKey){
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=' + encodeURIComponent(apiKey);
+  const body = {
+    contents: [{ role:'user', parts:[{ text: SYSTEM_PROMPT + '\n\n--- PLAN TEXT START ---\n' + planText + '\n--- PLAN TEXT END ---' }] }],
+    generationConfig: { temperature: 0.4, responseMimeType: 'application/json' }
+  };
+  const resp = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if(!resp.ok){
+    const t = await resp.text().catch(()=> '');
+    throw new Error('Gemini API error ' + resp.status + ': ' + t.slice(0,400));
+  }
+  const data = await resp.json();
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  const text = parts.map(p=>p.text||'').join('');
+  if(!text) throw new Error('Empty response from Gemini. Check the API key and try again.');
+  let cleaned = text.trim().replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
+  let parsed;
+  try{ parsed = JSON.parse(cleaned); }
+  catch(e){ throw new Error('Could not parse JSON from Gemini response. Raw output:\n' + cleaned.slice(0,600)); }
+  if(!parsed.nodes || !Array.isArray(parsed.nodes)) throw new Error('Gemini response was missing a "nodes" array.');
+  return parsed;
+}
+
+async function callGroq(planText, apiKey){
+  const url = 'https://api.groq.com/openai/v1/chat/completions';
+  const body = {
+    model: 'openai/gpt-oss-120b', // fast general-purpose model; change here if Groq updates its lineup
+    messages: [
+      { role:'system', content: SYSTEM_PROMPT },
+      { role:'user', content: '--- PLAN TEXT START ---\n' + planText + '\n--- PLAN TEXT END ---' }
+    ],
+    temperature: 0.4,
+    response_format: { type:'json_object' }
+  };
+  const resp = await fetch(url, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+apiKey },
+    body: JSON.stringify(body)
+  });
+  if(!resp.ok){
+    const t = await resp.text().catch(()=>'');
+    throw new Error('Groq API error ' + resp.status + ': ' + t.slice(0,400));
+  }
+  const data = await resp.json();
+  const text = data?.choices?.[0]?.message?.content || '';
+  if(!text) throw new Error('Empty response from Groq. Check the API key and try again.');
+  let cleaned = text.trim().replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
+  let parsed;
+  try{ parsed = JSON.parse(cleaned); }
+  catch(e){ throw new Error('Could not parse JSON from Groq response. Raw output:\n' + cleaned.slice(0,600)); }
+  if(!parsed.nodes || !Array.isArray(parsed.nodes)) throw new Error('Groq response was missing a "nodes" array.');
+  return parsed;
+}
+
+async function callAI(provider, planText, apiKey){
+  if(provider === 'groq') return callGroq(planText, apiKey);
+  return callGemini(planText, apiKey);
+}
+
+/* ============================= PROJECT BUILD ============================= */
+function buildProjectFromGemini(name, planText, gem){
+  const nodes = gem.nodes.map(n => ({
+    id: n.id || uid('n'),
+    parentId: n.parentId || null,
+    type: n.type || 'task',
+    label: n.label || '(untitled)',
+    status: n.doneHint ? 'done' : 'pending',
+    checklist: (n.checklist||[]).map(c => ({ id: uid('c'), text: c, done: false })),
+    notes: '',
+    collapsed: false
+  }));
+  return {
+    name: name || gem.title || 'Untitled plan',
+    title: gem.title || name || 'Untitled plan',
+    provider: 'gemini',
+    rawText: planText,
+    nodes
+  };
+}
+
+/* ============================= VIEW SWITCHING ============================= */
+function showView(v){
+  currentView = v;
+  document.getElementById('emptyState').style.display = v==='empty' ? 'flex':'none';
+  document.getElementById('newPlanView').style.display = v==='newplan' ? 'flex':'none';
+  document.getElementById('canvasView').style.display = v==='canvas' ? 'flex':'none';
+}
+
+function updateProviderFields(){
+  const provider = document.getElementById('provider').value;
+  prefs.lastProvider = provider;
+  document.getElementById('apiKey').value = prefs.apiKeys[provider] || '';
+  if(provider === 'groq'){
+    document.getElementById('apiKeyLabel').textContent = 'Groq API key';
+    document.getElementById('apiKey').placeholder = 'gsk_...';
+    document.getElementById('providerHint').textContent = 'Free key: console.groq.com/keys';
+  } else {
+    document.getElementById('apiKeyLabel').textContent = 'Gemini API key';
+    document.getElementById('apiKey').placeholder = 'AIza...';
+    document.getElementById('providerHint').textContent = 'Free key: aistudio.google.com/apikey';
+  }
+}
+document.getElementById('provider').onchange = updateProviderFields;
+
+function openNewPlanView(){
+  document.getElementById('planName').value = '';
+  document.getElementById('planText').value = '';
+  document.getElementById('provider').value = prefs.lastProvider || 'gemini';
+  updateProviderFields();
+  document.getElementById('errBox').style.display='none';
+  showView('newplan');
+}
+
+document.getElementById('newPlanBtn').onclick = openNewPlanView;
+document.getElementById('cancelNewPlan').onclick = () => {
+  showView(prefs.activeId ? 'canvas' : 'empty');
+};
+
+document.getElementById('generateBtn').onclick = async () => {
+  const name = document.getElementById('planName').value.trim();
+  const planText = document.getElementById('planText').value.trim();
+  const provider = document.getElementById('provider').value;
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const remember = document.getElementById('rememberKey').checked;
+  const errBox = document.getElementById('errBox');
+  errBox.style.display='none';
+  if(!planText){ errBox.textContent='Paste the plan text first.'; errBox.style.display='block'; return; }
+  if(!apiKey){ errBox.textContent='An API key is required for ' + (provider==='groq'?'Groq (console.groq.com/keys)':'Gemini (aistudio.google.com/apikey)') + '.'; errBox.style.display='block'; return; }
+
+  const btn = document.getElementById('generateBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Generating...';
+  try{
+    const gem = await callAI(provider, planText, apiKey);
+    const draft = buildProjectFromGemini(name, planText, gem);
+    draft.provider = provider;
+    const saved = await apiCreate(draft); // Mongo assigns _id here
+    projects.unshift(saved);
+    prefs.activeId = saved._id;
+    prefs.lastProvider = provider;
+    if(remember) prefs.apiKeys[provider] = apiKey;
+    savePrefs();
+    pan = {x:40,y:40}; zoom = 1; selectedNodeId = null;
+    renderSidebar();
+    renderCanvas();
+    showView('canvas');
+  }catch(e){
+    let msg = e.message || String(e);
+    if(/Failed to fetch|NetworkError|CORS/i.test(msg)){
+      msg += '\n\nIf this is a network error reaching Gemini/Groq, check your internet connection and API key. If it mentions the Waypoint server itself, make sure `npm start` is still running.';
+    }
+    errBox.textContent = msg;
+    errBox.style.display='block';
+  }finally{
+    btn.disabled = false; btn.textContent = 'Generate mind map';
+  }
+};
+
+/* ============================= SIDEBAR ============================= */
+function progressOf(project){
+  const leafNodes = project.nodes.filter(n => !project.nodes.some(m => m.parentId===n.id));
+  if(leafNodes.length===0) return 0;
+  const done = leafNodes.filter(n=>n.status==='done').length;
+  return Math.round(100*done/leafNodes.length);
+}
+
+function renderSidebar(){
+  const list = document.getElementById('projectList');
+  list.innerHTML = '';
+  const sorted = [...projects].sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt));
+  sorted.forEach(p => {
+    const el = document.createElement('div');
+    el.className = 'project-item' + (p._id===prefs.activeId && currentView==='canvas' ? ' active':'');
+    const pct = progressOf(p);
+    el.innerHTML = `
+      <button class="p-del" title="Delete plan">✕</button>
+      <div class="p-name">${escapeHtml(p.name)}</div>
+      <div class="p-meta">${p.nodes.length} nodes · ${pct}% done</div>
+      <div class="p-bar"><div class="p-bar-fill" style="width:${pct}%"></div></div>
+    `;
+    el.onclick = (e) => {
+      if(e.target.classList.contains('p-del')) return;
+      prefs.activeId = p._id; savePrefs();
+      pan = {x:40,y:40}; zoom=1; selectedNodeId=null;
+      renderSidebar(); renderCanvas(); showView('canvas');
+    };
+    el.querySelector('.p-del').onclick = async (e) => {
+      e.stopPropagation();
+      if(confirm('Delete "'+p.name+'"? This cannot be undone.')){
+        try{ await apiDelete(p._id); }catch(err){ alert(err.message); return; }
+        projects = projects.filter(x=>x._id!==p._id);
+        if(prefs.activeId===p._id) prefs.activeId = null;
+        savePrefs(); renderSidebar();
+        showView(prefs.activeId ? 'canvas' : 'empty');
+      }
+    };
+    list.appendChild(el);
+  });
+}
+
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ============================= LAYOUT + RENDER CANVAS ============================= */
+const NODE_W = 210, NODE_H = 60, COL_W = 270, ROW_H = 78;
+
+function activeProject(){ return projects.find(p => p._id === prefs.activeId); }
+
+function computeLayout(project){
+  const nodes = project.nodes;
+  const byId = {}; nodes.forEach(n => byId[n.id]=n);
+  const children = {}; nodes.forEach(n => { children[n.parentId] = children[n.parentId]||[]; if(n.parentId) children[n.parentId].push(n); });
+  const roots = nodes.filter(n => !n.parentId || !byId[n.parentId]);
+  const pos = {};
+  let cursor = 0;
+
+  function visibleChildren(n){ return n.collapsed ? [] : (children[n.id]||[]); }
+
+  function assign(n, depth){
+    const kids = visibleChildren(n);
+    if(kids.length===0){
+      pos[n.id] = { x: depth*COL_W, y: cursor*ROW_H, depth };
+      cursor += 1;
+    } else {
+      const startCursor = cursor;
+      kids.forEach(k => assign(k, depth+1));
+      const first = pos[kids[0].id].y;
+      const last = pos[kids[kids.length-1].id].y;
+      pos[n.id] = { x: depth*COL_W, y: (first+last)/2, depth };
+    }
+  }
+  roots.forEach(r => assign(r, 0));
+  return { pos, children, roots };
+}
+
+function renderCanvas(){
+  const project = activeProject();
+  if(!project) return;
+  document.getElementById('planTitleLabel').textContent = project.title;
+  const pct = progressOf(project);
+  document.getElementById('progressFill').style.width = pct+'%';
+  document.getElementById('progressLabel').textContent = pct+'% complete';
+
+  const { pos, children } = computeLayout(project);
+  const inner = document.getElementById('canvasInner');
+  const svg = document.getElementById('edgeLayer');
+  inner.querySelectorAll('.node').forEach(e=>e.remove());
+
+  let maxX=0, maxY=0;
+  Object.values(pos).forEach(p=>{ maxX=Math.max(maxX,p.x+NODE_W); maxY=Math.max(maxY,p.y+NODE_H); });
+  svg.setAttribute('width', maxX+80);
+  svg.setAttribute('height', maxY+80);
+  inner.style.width = (maxX+80)+'px';
+  inner.style.height = (maxY+80)+'px';
+
+  let edgesHtml = '';
+  project.nodes.forEach(n => {
+    if(n.parentId && pos[n.parentId] && pos[n.id]){
+      const p = pos[n.parentId], c = pos[n.id];
+      const x1 = p.x+NODE_W, y1 = p.y+NODE_H/2;
+      const x2 = c.x, y2 = c.y+NODE_H/2;
+      const midX = x1 + (x2-x1)/2;
+      edgesHtml += `<path d="M ${x1} ${y1} H ${midX} V ${y2} H ${x2}" stroke="var(--trace-dim)" stroke-width="1.5" fill="none"/>`;
+      edgesHtml += `<circle cx="${x1}" cy="${y1}" r="3" fill="var(--trace)"/>`;
+      edgesHtml += `<circle cx="${x2}" cy="${y2}" r="3" fill="var(--trace)"/>`;
+    }
+  });
+  svg.innerHTML = edgesHtml;
+
+  project.nodes.forEach(n => {
+    const p = pos[n.id];
+    if(!p) return;
+    const div = document.createElement('div');
+    div.className = 'node status-'+n.status + (n.id===selectedNodeId ? ' selected':'');
+    div.style.left = p.x+'px';
+    div.style.top = p.y+'px';
+    const chkTotal = n.checklist.length;
+    const chkDone = n.checklist.filter(c=>c.done).length;
+    div.innerHTML = `
+      <div class="n-type">${n.type}</div>
+      <div class="n-label">${escapeHtml(n.label)}</div>
+      <div class="n-foot">
+        <span class="n-chk">${chkTotal ? chkDone+'/'+chkTotal+' steps' : ''}</span>
+      </div>
+    `;
+    div.onclick = (e) => { e.stopPropagation(); selectNode(n.id); };
+    const kids = children[n.id]||[];
+    if(kids.length){
+      const t = document.createElement('div');
+      t.className = 'n-toggle';
+      t.textContent = n.collapsed ? '+' : '–';
+      t.onclick = (e) => { e.stopPropagation(); n.collapsed = !n.collapsed; queueSave(project); renderCanvas(); };
+      div.appendChild(t);
+    }
+    inner.appendChild(div);
+  });
+
+  applyTransform();
+}
+
+function applyTransform(){
+  document.getElementById('canvasInner').style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`;
+}
+
+/* pan + zoom */
+const scrollEl = document.getElementById('canvasScroll');
+let dragging = false, dragStart = {x:0,y:0}, panStart = {x:0,y:0};
+scrollEl.addEventListener('mousedown', (e) => {
+  if(e.target.closest('.node')) return;
+  dragging = true; scrollEl.classList.add('grabbing');
+  dragStart = {x:e.clientX, y:e.clientY}; panStart = {...pan};
+});
+window.addEventListener('mousemove', (e) => {
+  if(!dragging) return;
+  pan.x = panStart.x + (e.clientX - dragStart.x);
+  pan.y = panStart.y + (e.clientY - dragStart.y);
+  applyTransform();
+});
+window.addEventListener('mouseup', () => { dragging=false; scrollEl.classList.remove('grabbing'); });
+scrollEl.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const delta = -e.deltaY * 0.001;
+  zoom = Math.min(1.6, Math.max(0.4, zoom + delta));
+  applyTransform();
+}, { passive:false });
+
+document.getElementById('resetViewBtn').onclick = () => { pan={x:40,y:40}; zoom=1; applyTransform(); };
+
+document.getElementById('exportBtn').onclick = () => {
+  const project = activeProject(); if(!project) return;
+  const blob = new Blob([JSON.stringify(project, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = project.name.replace(/[^a-z0-9]/gi,'_') + '.json';
+  a.click();
+};
+
+document.getElementById('addRootBtn').onclick = () => {
+  const project = activeProject(); if(!project) return;
+  const label = prompt('New top-level node label:');
+  if(!label) return;
+  project.nodes.push({ id: uid('n'), parentId:null, type:'phase', label, status:'pending', checklist:[], notes:'', collapsed:false });
+  queueSave(project); renderCanvas(); renderSidebar();
+};
+
+/* ============================= DETAIL PANEL ============================= */
+function breadcrumb(project, node){
+  const byId = {}; project.nodes.forEach(n=>byId[n.id]=n);
+  const chain = [];
+  let cur = node;
+  while(cur){ chain.unshift(cur.label); cur = cur.parentId ? byId[cur.parentId] : null; }
+  return chain.join(' / ');
+}
+
+function selectNode(id){
+  selectedNodeId = id;
+  renderCanvas();
+  renderDetail();
+  document.getElementById('detailPanel').classList.add('open');
+}
+
+function closeDetail(){
+  selectedNodeId = null;
+  document.getElementById('detailPanel').classList.remove('open');
+  renderCanvas();
+}
+
+function renderDetail(){
+  const project = activeProject();
+  const node = project.nodes.find(n=>n.id===selectedNodeId);
+  const inner = document.getElementById('detailInner');
+  if(!node){ inner.innerHTML=''; return; }
+
+  inner.innerHTML = `
+    <button id="closeDetail">×</button>
+    <div class="d-breadcrumb">${escapeHtml(breadcrumb(project,node))}</div>
+    <input class="d-label-input" id="dLabel" value="${escapeHtml(node.label)}">
+    <div class="d-type-badge">
+      <select id="dType" class="mono" style="background:var(--bg-panel); color:var(--text-dim); border:1px solid var(--border); border-radius:3px; padding:2px 6px; font-size:10px;">
+        ${['phase','milestone','file','task'].map(t=>`<option value="${t}" ${t===node.type?'selected':''}>${t}</option>`).join('')}
+      </select>
+    </div>
+
+    <div class="status-row">
+      <div class="status-btn pending ${node.status==='pending'?'active':''}" data-s="pending">Pending</div>
+      <div class="status-btn progress ${node.status==='progress'?'active':''}" data-s="progress">In progress</div>
+      <div class="status-btn done ${node.status==='done'?'active':''}" data-s="done">Done</div>
+    </div>
+
+    <div class="d-section-title">Checklist — small steps to not forget</div>
+    <div id="chkList"></div>
+    <div class="add-row">
+      <input type="text" id="newChk" placeholder="Add a step...">
+      <button id="addChkBtn">Add</button>
+    </div>
+
+    <div class="d-section-title">Notes</div>
+    <textarea class="notes" id="dNotes" placeholder="Anything about this node worth remembering...">${escapeHtml(node.notes||'')}</textarea>
+
+    <button class="child-btn" id="addChildBtn">+ Add child node</button>
+    <button class="danger-btn" id="delNodeBtn">Delete this node</button>
+  `;
+
+  document.getElementById('closeDetail').onclick = closeDetail;
+
+  document.getElementById('dLabel').onchange = (e) => { node.label = e.target.value.trim() || node.label; queueSave(project); renderCanvas(); renderDetail(); };
+  document.getElementById('dType').onchange = (e) => { node.type = e.target.value; queueSave(project); renderCanvas(); };
+
+  inner.querySelectorAll('.status-btn').forEach(b => {
+    b.onclick = () => { node.status = b.dataset.s; queueSave(project); renderCanvas(); renderSidebar(); renderDetail(); };
+  });
+
+  const chkList = document.getElementById('chkList');
+  node.checklist.forEach(c => {
+    const row = document.createElement('div');
+    row.className = 'chk-item' + (c.done?' checked':'');
+    row.innerHTML = `<input type="checkbox" ${c.done?'checked':''}> <span>${escapeHtml(c.text)}</span> <button class="chk-del">✕</button>`;
+    row.querySelector('input').onchange = (e) => { c.done = e.target.checked; queueSave(project); renderCanvas(); renderDetail(); };
+    row.querySelector('.chk-del').onclick = () => { node.checklist = node.checklist.filter(x=>x.id!==c.id); queueSave(project); renderCanvas(); renderDetail(); };
+    chkList.appendChild(row);
+  });
+
+  document.getElementById('addChkBtn').onclick = () => {
+    const inp = document.getElementById('newChk');
+    const val = inp.value.trim();
+    if(!val) return;
+    node.checklist.push({ id: uid('c'), text: val, done:false });
+    inp.value='';
+    queueSave(project); renderCanvas(); renderDetail();
+  };
+  document.getElementById('newChk').onkeydown = (e) => { if(e.key==='Enter') document.getElementById('addChkBtn').click(); };
+
+  document.getElementById('dNotes').onchange = (e) => { node.notes = e.target.value; queueSave(project); };
+
+  document.getElementById('addChildBtn').onclick = () => {
+    const label = prompt('New child node label:');
+    if(!label) return;
+    const child = { id: uid('n'), parentId: node.id, type: node.type==='phase'?'milestone':'task', label, status:'pending', checklist:[], notes:'', collapsed:false };
+    project.nodes.push(child);
+    queueSave(project); renderCanvas();
+  };
+
+  document.getElementById('delNodeBtn').onclick = () => {
+    if(!confirm('Delete "'+node.label+'" and all its children?')) return;
+    const toDelete = new Set([node.id]);
+    let changed = true;
+    while(changed){
+      changed = false;
+      project.nodes.forEach(n => { if(n.parentId && toDelete.has(n.parentId) && !toDelete.has(n.id)){ toDelete.add(n.id); changed=true; } });
+    }
+    project.nodes = project.nodes.filter(n => !toDelete.has(n.id));
+    closeDetail();
+    queueSave(project); renderCanvas(); renderSidebar();
+  };
+}
+
+/* ============================= INIT ============================= */
+(async function init(){
+  try{
+    projects = await apiList();
+  }catch(e){
+    document.getElementById('emptyState').innerHTML =
+      `<h2>Can't reach Waypoint's server</h2><p>${escapeHtml(e.message)}<br><br>Make sure you started the server with <code>npm start</code> and that MONGODB_URI in .env is correct, then reload this page.</p>`;
+    showView('empty');
+    return;
+  }
+  renderSidebar();
+  if(prefs.activeId && projects.some(p => p._id === prefs.activeId)){
+    renderCanvas();
+    showView('canvas');
+  } else {
+    showView('empty');
+  }
+})();
+</script>
+</body>
+</html>
