@@ -7,6 +7,8 @@ const jwt = require('jsonwebtoken');
 const Project = require('./models/Project');
 const User = require('./models/User');
 const { authenticate, requireRole, JWT_SECRET } = require('./middleware/auth');
+const mcpServer = require('./mcpServer');
+const { SSEServerTransport } = require('@modelcontextprotocol/sdk/server/sse.js');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -200,6 +202,57 @@ app.delete('/api/projects/:id', authenticate, requireRole('admin'), async (req, 
     res.json({ deleted: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- MCP SSE Routes ----
+const mcpTransports = new Map();
+
+// JWT Authentication middleware for MCP endpoints (GET sse and POST messages)
+const authenticateMcp = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  const queryToken = req.query.token;
+  
+  let token = null;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.slice(7).trim();
+  } else if (queryToken) {
+    token = queryToken.trim();
+  }
+  
+  if (!token) {
+    return res.status(401).json({ error: 'Authentication required: JWT token must be provided via Authorization header or ?token query parameter.' });
+  }
+  
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    req.auth = decoded; // Propagates as authInfo in the MCP transport
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid or expired JWT token' });
+  }
+};
+
+app.get('/mcp/sse', authenticateMcp, async (req, res) => {
+  const transport = new SSEServerTransport('/mcp/messages', res);
+  mcpTransports.set(transport.sessionId, transport);
+  
+  res.on('close', () => {
+    mcpTransports.delete(transport.sessionId);
+  });
+  
+  await mcpServer.connect(transport);
+});
+
+app.post('/mcp/messages', authenticateMcp, async (req, res) => {
+  const sessionId = req.query.sessionId;
+  const transport = mcpTransports.get(sessionId);
+  
+  if (transport) {
+    await transport.handlePostMessage(req, res, req.body);
+  } else {
+    res.status(400).send('Session not found');
   }
 });
 
