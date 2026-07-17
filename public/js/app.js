@@ -139,6 +139,30 @@ Rules:
 - Every node except top-level phases must have a valid parentId matching another node's id.
 - Output ONLY the raw JSON object. No markdown code fences, no commentary, no trailing text.`;
 
+function robustJSONParse(text) {
+  let cleaned = text.trim();
+  // Strip markdown fences
+  cleaned = cleaned.replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();
+  
+  try {
+    return JSON.parse(cleaned);
+  } catch (err) {
+    // Attempt cleanup 1: strip trailing commas (e.g. ,} -> } or ,] -> ])
+    let repaired = cleaned.replace(/,\s*([\]}])/g, '$1');
+    try {
+      return JSON.parse(repaired);
+    } catch (err2) {
+      // Attempt cleanup 2: strip single line and multi-line comments
+      repaired = repaired.replace(/\/\/.*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+      try {
+        return JSON.parse(repaired);
+      } catch (err3) {
+        throw new Error(err.message + '\n\nRaw Response Preview:\n' + cleaned.slice(0, 600));
+      }
+    }
+  }
+}
+
 async function callGemini(planText, apiKey){
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=' + encodeURIComponent(apiKey);
   const body = {
@@ -154,10 +178,7 @@ async function callGemini(planText, apiKey){
   const parts = data?.candidates?.[0]?.content?.parts || [];
   const text = parts.map(p=>p.text||'').join('');
   if(!text) throw new Error('Empty response from Gemini. Check the API key and try again.');
-  let cleaned = text.trim().replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
-  let parsed;
-  try{ parsed = JSON.parse(cleaned); }
-  catch(e){ throw new Error('Could not parse JSON from Gemini response. Raw output:\n' + cleaned.slice(0,600)); }
+  const parsed = robustJSONParse(text);
   if(!parsed.nodes || !Array.isArray(parsed.nodes)) throw new Error('Gemini response was missing a "nodes" array.');
   return parsed;
 }
@@ -185,10 +206,7 @@ async function callGroq(planText, apiKey){
   const data = await resp.json();
   const text = data?.choices?.[0]?.message?.content || '';
   if(!text) throw new Error('Empty response from Groq. Check the API key and try again.');
-  let cleaned = text.trim().replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
-  let parsed;
-  try{ parsed = JSON.parse(cleaned); }
-  catch(e){ throw new Error('Could not parse JSON from Groq response. Raw output:\n' + cleaned.slice(0,600)); }
+  const parsed = robustJSONParse(text);
   if(!parsed.nodes || !Array.isArray(parsed.nodes)) throw new Error('Groq response was missing a "nodes" array.');
   return parsed;
 }
@@ -222,8 +240,7 @@ async function callAINodeBreakdown(provider, prompt, apiKey) {
     const text = data?.choices?.[0]?.message?.content || '';
     if (!text) throw new Error('Empty response from Groq.');
     
-    let cleaned = text.trim().replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();
-    return JSON.parse(cleaned);
+    return robustJSONParse(text);
   } else {
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=' + encodeURIComponent(apiKey);
     const body = {
@@ -240,8 +257,7 @@ async function callAINodeBreakdown(provider, prompt, apiKey) {
     const text = parts.map(p => p.text || '').join('');
     if (!text) throw new Error('Empty response from Gemini.');
     
-    let cleaned = text.trim().replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();
-    return JSON.parse(cleaned);
+    return robustJSONParse(text);
   }
 }
 
@@ -648,6 +664,7 @@ Rules:
 - Select the appropriate type for the new node. If the parent is a "phase", this new node should probably be a "milestone". If parent is a "milestone", this new node should be a "file" or a "task".
 - The children array contains sub-items. For any child that is a direct descendant of the new node, "parentId" must be null. For any sub-item that is a child of another item in the "children" list, its "parentId" must match the "id" of that parent in the "children" list.
 - Make the subnode labels, checklists, and notes specific, concrete, and high quality.
+- CRITICAL: Ensure the response is perfectly formed JSON. Escape all double quotes inside string fields (e.g. use \" instead of raw \"). Do not include comments, trailing commas, or markdown formatting inside the JSON.
 - Output ONLY the raw JSON object. No markdown code fences, no trailing text.`;
 
       const parsed = await callAINodeBreakdown(provider, prompt, apiKey);
