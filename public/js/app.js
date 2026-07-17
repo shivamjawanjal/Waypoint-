@@ -198,6 +198,53 @@ async function callAI(provider, planText, apiKey){
   return callGemini(planText, apiKey);
 }
 
+async function callAINodeBreakdown(provider, prompt, apiKey) {
+  if (provider === 'groq') {
+    const url = 'https://api.groq.com/openai/v1/chat/completions';
+    const body = {
+      model: 'openai/gpt-oss-120b',
+      messages: [
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.4,
+      response_format: { type: 'json_object' }
+    };
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+      body: JSON.stringify(body)
+    });
+    if (!resp.ok) {
+      const t = await resp.text().catch(() => '');
+      throw new Error('Groq API error ' + resp.status + ': ' + t.slice(0, 400));
+    }
+    const data = await resp.json();
+    const text = data?.choices?.[0]?.message?.content || '';
+    if (!text) throw new Error('Empty response from Groq.');
+    
+    let cleaned = text.trim().replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();
+    return JSON.parse(cleaned);
+  } else {
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=' + encodeURIComponent(apiKey);
+    const body = {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.4, responseMimeType: 'application/json' }
+    };
+    const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!resp.ok) {
+      const t = await resp.text().catch(() => '');
+      throw new Error('Gemini API error ' + resp.status + ': ' + t.slice(0, 400));
+    }
+    const data = await resp.json();
+    const parts = data?.candidates?.[0]?.content?.parts || [];
+    const text = parts.map(p => p.text || '').join('');
+    if (!text) throw new Error('Empty response from Gemini.');
+    
+    let cleaned = text.trim().replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();
+    return JSON.parse(cleaned);
+  }
+}
+
 /* ============================= PROJECT BUILD ============================= */
 function buildProjectFromGemini(name, planText, gem){
   const nodes = gem.nodes.map(n => ({
@@ -603,15 +650,7 @@ Rules:
 - Make the subnode labels, checklists, and notes specific, concrete, and high quality.
 - Output ONLY the raw JSON object. No markdown code fences, no trailing text.`;
 
-      const aiResponse = await callAI(provider, prompt, apiKey);
-      let parsed;
-      try {
-        parsed = JSON.parse(aiResponse);
-      } catch (jsonErr) {
-        // Strip markdown code fences if LLM accidentally included them
-        const cleaned = aiResponse.replace(/```json|```/g, '').trim();
-        parsed = JSON.parse(cleaned);
-      }
+      const parsed = await callAINodeBreakdown(provider, prompt, apiKey);
       
       // 1. Create the new node itself
       const newNodeId = uid('n');
