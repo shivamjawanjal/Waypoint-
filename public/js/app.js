@@ -459,6 +459,228 @@ document.getElementById('nuAddBtn').onclick = async () => {
   }catch(e){ errEl.textContent = e.message; errEl.style.display = 'block'; }
 };
 
+/* ============================= ADD NODE MODAL ============================= */
+let addNodeParentNode = null;
+
+function openAddNodeModal(parent = null) {
+  addNodeParentNode = parent;
+  document.getElementById('anModalTitle').textContent = parent ? `Add Child Node under "${parent.label}"` : 'Add Top-Level Phase Node';
+  document.getElementById('anLabel').value = '';
+  document.getElementById('anUseAI').checked = false;
+  document.getElementById('anDescription').value = '';
+  document.getElementById('anAISubSection').style.display = 'none';
+  document.getElementById('anErr').style.display = 'none';
+  
+  // Setup provider keys
+  const provider = prefs.lastProvider || 'gemini';
+  document.getElementById('anProvider').value = provider;
+  updateAddNodeProviderFields();
+  
+  document.getElementById('addNodeModal').classList.add('open');
+}
+
+function closeAddNodeModal() {
+  addNodeParentNode = null;
+  document.getElementById('addNodeModal').classList.remove('open');
+}
+
+function updateAddNodeProviderFields() {
+  const provider = document.getElementById('anProvider').value;
+  document.getElementById('anApiKey').value = prefs.apiKeys[provider] || '';
+  if (provider === 'groq') {
+    document.getElementById('anApiKeyLabel').textContent = 'Groq API key';
+    document.getElementById('anApiKey').placeholder = 'gsk_...';
+    document.getElementById('anProviderHint').textContent = 'Free key: console.groq.com/keys';
+  } else {
+    document.getElementById('anApiKeyLabel').textContent = 'Gemini API key';
+    document.getElementById('anApiKey').placeholder = 'AIza...';
+    document.getElementById('anProviderHint').textContent = 'Free key: aistudio.google.com/apikey';
+  }
+}
+
+document.getElementById('anProvider').onchange = updateAddNodeProviderFields;
+
+document.getElementById('anUseAI').onchange = (e) => {
+  document.getElementById('anAISubSection').style.display = e.target.checked ? 'block' : 'none';
+};
+
+document.getElementById('closeAddNodeModal').onclick = closeAddNodeModal;
+
+document.getElementById('anAddBtn').onclick = async () => {
+  const label = document.getElementById('anLabel').value.trim();
+  const useAI = document.getElementById('anUseAI').checked;
+  const errEl = document.getElementById('anErr');
+  errEl.style.display = 'none';
+  
+  if (!label) {
+    errEl.textContent = 'Node label is required.';
+    errEl.style.display = 'block';
+    return;
+  }
+  
+  const project = activeProject();
+  if (!project) return;
+  
+  if (!useAI) {
+    // MANUAL NODE ADDITION
+    const type = addNodeParentNode ? (addNodeParentNode.type === 'phase' ? 'milestone' : 'task') : 'phase';
+    const newNode = {
+      id: uid('n'),
+      parentId: addNodeParentNode ? addNodeParentNode.id : null,
+      type,
+      label,
+      status: 'pending',
+      checklist: [],
+      notes: '',
+      collapsed: false,
+      assignedTo: null,
+      completedBy: null
+    };
+    project.nodes.push(newNode);
+    queueSave(project);
+    renderCanvas();
+    renderSidebar();
+    if (selectedNodeId === addNodeParentNode?.id) {
+      renderDetail();
+    }
+    closeAddNodeModal();
+  } else {
+    // AI NODE BREAKDOWN
+    const description = document.getElementById('anDescription').value.trim();
+    const provider = document.getElementById('anProvider').value;
+    const apiKey = document.getElementById('anApiKey').value.trim();
+    
+    if (!apiKey) {
+      errEl.textContent = 'An API key is required to perform AI breakdown.';
+      errEl.style.display = 'block';
+      return;
+    }
+    
+    const btn = document.getElementById('anAddBtn');
+    const oldText = btn.textContent;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Generating...';
+    
+    try {
+      const parentLabel = addNodeParentNode ? addNodeParentNode.label : 'root';
+      const parentType = addNodeParentNode ? addNodeParentNode.type : 'none';
+      
+      const prompt = `You are a project-planning assistant. The user is adding a new node to an existing project plan mind map.
+The parent node is "${parentLabel}" (type: "${parentType}").
+The new node to add is "${label}".
+Additional scope description for this new node: "${description || 'Break down appropriate files and tasks for this node.'}"
+
+Create a breakdown of subnodes (children, grandchildren, etc.) that represent this new node.
+Provide the output in JSON format with this exact structure:
+{
+  "label": "the label for the new node",
+  "notes": "notes for the new node",
+  "checklist": ["checklist item for the new node", "..."],
+  "type": "milestone" | "file" | "task",
+  "children": [
+    {
+      "id": "temp-child-id-1",
+      "parentId": null,
+      "type": "milestone" | "file" | "task",
+      "label": "display label",
+      "notes": "notes for this subnode",
+      "checklist": ["checklist item for this subnode", "..."]
+    },
+    {
+      "id": "temp-child-id-2",
+      "parentId": "temp-child-id-1",
+      "type": "file" | "task",
+      "label": "display label",
+      "notes": "notes for this subnode",
+      "checklist": ["checklist item for this subnode", "..."]
+    }
+  ]
+}
+
+Rules:
+- Select the appropriate type for the new node. If the parent is a "phase", this new node should probably be a "milestone". If parent is a "milestone", this new node should be a "file" or a "task".
+- The children array contains sub-items. For any child that is a direct descendant of the new node, "parentId" must be null. For any sub-item that is a child of another item in the "children" list, its "parentId" must match the "id" of that parent in the "children" list.
+- Make the subnode labels, checklists, and notes specific, concrete, and high quality.
+- Output ONLY the raw JSON object. No markdown code fences, no trailing text.`;
+
+      const aiResponse = await callAI(provider, prompt, apiKey);
+      let parsed;
+      try {
+        parsed = JSON.parse(aiResponse);
+      } catch (jsonErr) {
+        // Strip markdown code fences if LLM accidentally included them
+        const cleaned = aiResponse.replace(/```json|```/g, '').trim();
+        parsed = JSON.parse(cleaned);
+      }
+      
+      // 1. Create the new node itself
+      const newNodeId = uid('n');
+      const targetType = parsed.type || (addNodeParentNode ? (addNodeParentNode.type === 'phase' ? 'milestone' : 'task') : 'phase');
+      const newNode = {
+        id: newNodeId,
+        parentId: addNodeParentNode ? addNodeParentNode.id : null,
+        type: targetType,
+        label: parsed.label || label,
+        status: 'pending',
+        checklist: (parsed.checklist || []).map(text => ({ id: uid('c'), text, done: false })),
+        notes: parsed.notes || '',
+        collapsed: false,
+        assignedTo: null,
+        completedBy: null
+      };
+      
+      project.nodes.push(newNode);
+      
+      // 2. Map temporary IDs to real uids to maintain relations
+      const idMap = {};
+      if (parsed.children && Array.isArray(parsed.children)) {
+        parsed.children.forEach(child => {
+          const realId = uid('n');
+          idMap[child.id] = realId;
+        });
+        
+        parsed.children.forEach(child => {
+          const realParentId = child.parentId ? (idMap[child.parentId] || newNodeId) : newNodeId;
+          
+          project.nodes.push({
+            id: idMap[child.id],
+            parentId: realParentId,
+            type: child.type || 'task',
+            label: child.label,
+            status: 'pending',
+            checklist: (child.checklist || []).map(text => ({ id: uid('c'), text, done: false })),
+            notes: child.notes || '',
+            collapsed: false,
+            assignedTo: null,
+            completedBy: null
+          });
+        });
+      }
+      
+      // Save preferences key
+      const remember = document.getElementById('rememberKey').checked;
+      if (remember) {
+        prefs.apiKeys[provider] = apiKey;
+        savePrefs();
+      }
+      
+      queueSave(project);
+      renderCanvas();
+      renderSidebar();
+      if (selectedNodeId === addNodeParentNode?.id) {
+        renderDetail();
+      }
+      closeAddNodeModal();
+    } catch (e) {
+      errEl.textContent = 'AI breakdown failed: ' + e.message;
+      errEl.style.display = 'block';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = oldText;
+    }
+  }
+};
+
 /* ============================= VIEW SWITCHING ============================= */
 function showView(v){
   currentView = v;
@@ -734,10 +956,7 @@ document.getElementById('exportBtn').onclick = () => {
 
 document.getElementById('addRootBtn').onclick = () => {
   const project = activeProject(); if(!project) return;
-  const label = prompt('New top-level node label:');
-  if(!label) return;
-  project.nodes.push({ id: uid('n'), parentId:null, type:'phase', label, status:'pending', checklist:[], notes:'', collapsed:false, assignedTo:null, completedBy:null });
-  queueSave(project); renderCanvas(); renderSidebar();
+  openAddNodeModal(null);
 };
 
 /* ============================= TASK FILTER ============================= */
@@ -892,11 +1111,9 @@ function renderDetail(){
 
   if(canEdit){
     document.getElementById('addChildBtn').onclick = () => {
-      const label = prompt('New child node label:');
-      if(!label) return;
-      const child = { id: uid('n'), parentId: node.id, type: node.type==='phase'?'milestone':'task', label, status:'pending', checklist:[], notes:'', collapsed:false, assignedTo:null, completedBy:null };
-      project.nodes.push(child);
-      queueSave(project); renderCanvas();
+      const project = activeProject(); if(!project) return;
+      const node = project.nodes.find(n=>n.id===selectedNodeId);
+      if(node) openAddNodeModal(node);
     };
 
     document.getElementById('delNodeBtn').onclick = () => {

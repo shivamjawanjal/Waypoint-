@@ -402,8 +402,8 @@ body {
   display: none;
 }
 
-/* ---------- User management modal ---------- */
-#userModal {
+/* ---------- Reusable Modal Overlays ---------- */
+.modal {
   position: fixed;
   inset: 0;
   z-index: 90;
@@ -414,8 +414,66 @@ body {
   backdrop-filter: blur(3px);
 }
 
-#userModal.open {
+.modal.open {
   display: flex;
+}
+
+.modal-card input[type=text], 
+.modal-card input[type=password], 
+.modal-card textarea {
+  width: 100%;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 4px;
+  padding: 10px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12.5px;
+  outline: none;
+  margin-bottom: 14px;
+}
+
+.modal-card textarea {
+  resize: vertical;
+}
+
+.modal-card input:focus, 
+.modal-card textarea:focus {
+  border-color: var(--trace);
+}
+
+.modal-card label.field-label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.modal-card button.btn-primary {
+  width: 100%;
+  background: var(--trace);
+  color: #06222b;
+  border: none;
+  padding: 11px 20px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size: 12.5px;
+  cursor: pointer;
+  margin-top: 4px;
+  letter-spacing: 0.4px;
+}
+
+.modal-card button.btn-primary:hover:not(:disabled) {
+  background: #7fd8e6;
+}
+
+.modal-card button.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: progress;
 }
 
 .modal-card {

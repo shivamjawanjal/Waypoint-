@@ -62,7 +62,7 @@
 </div>
 
 <!-- ==================== USER MANAGEMENT MODAL ==================== -->
-<div id="userModal">
+<div id="userModal" class="modal">
   <div class="modal-card">
     <h3>Manage Users <button class="close-modal" id="closeUserModal">&times;</button></h3>
     <div id="userList"></div>
@@ -80,6 +80,50 @@
         <button id="nuAddBtn">Add</button>
       </div>
       <div id="nuErr" class="form-err"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== ADD NODE MODAL ==================== -->
+<div id="addNodeModal" class="modal">
+  <div class="modal-card">
+    <h3 id="anModalTitle">Add Node <button class="close-modal" id="closeAddNodeModal">&times;</button></h3>
+    <div id="anForm">
+      <div class="field">
+        <label class="field-label">Node Title / Label</label>
+        <input type="text" id="anLabel" placeholder="e.g. Database Migrations">
+      </div>
+      
+      <div class="remember-row" style="margin: 10px 0 16px; display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" id="anUseAI" style="width:14px; height:14px; accent-color:var(--trace); cursor:pointer;">
+        <label for="anUseAI" style="font-weight:600; color:var(--trace); font-size:12px; cursor:pointer; user-select:none;">Break down this node using AI</label>
+      </div>
+      
+      <div id="anAISubSection" style="display:none; margin-top:15px; padding-top:15px; border-top:1px solid var(--border);">
+        <div class="field">
+          <label class="field-label">Description / Scope of work for AI</label>
+          <textarea id="anDescription" placeholder="Describe what this node should accomplish (e.g., write database schemas, add profiles table, configure migrations script)..." style="height:80px;"></textarea>
+        </div>
+        
+        <div class="row2" style="display:flex; gap:10px; margin-bottom:14px;">
+          <div class="field" style="flex: 0 0 120px; margin-bottom:0;">
+            <label class="field-label">AI provider</label>
+            <select id="anProvider" style="width:100%; background:var(--bg-panel-2); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; padding:9px 10px; font-family:'JetBrains Mono',monospace; font-size:12px; outline:none; height:40px;">
+              <option value="gemini">Gemini</option>
+              <option value="groq">Groq</option>
+            </select>
+          </div>
+          <div class="field" style="flex:1; margin-bottom:0;">
+            <label class="field-label" id="anApiKeyLabel">Gemini API key</label>
+            <input type="password" id="anApiKey" placeholder="AIza..." style="margin-bottom:0; height:40px;">
+          </div>
+        </div>
+        <div style="font-size:11px; color:var(--text-faint); margin-top:6px; margin-bottom:14px; font-family:'JetBrains Mono',monospace;" id="anProviderHint">Free key: aistudio.google.com/apikey</div>
+      </div>
+      
+      <div id="anErr" class="err-box" style="display:none; background:rgba(232, 97, 90, 0.1); border:1px solid var(--danger); color:#ffb4ae; padding:8px 10px; border-radius:4px; font-size:11px; margin-bottom:12px; font-family:'JetBrains Mono',monospace;"></div>
+      
+      <button id="anAddBtn" class="btn-primary">Add Node</button>
     </div>
   </div>
 </div>
